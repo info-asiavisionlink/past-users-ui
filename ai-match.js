@@ -6,8 +6,9 @@
 const MATCHES_WEBHOOK_URL =
   "https://nextasia.app.n8n.cloud/webhook/c328b61c-9d8a-4488-97de-3632536dbd41";
 
-/** POST: selected users webhook — replace when ready */
-const SEND_WEBHOOK_URL = "SET_LATER";
+/** GET: submit selected users + me (query parameters) */
+const SUBMIT_WEBHOOK_URL =
+  "https://nextasia.app.n8n.cloud/webhook/ac46b708-bc1c-4d23-92ab-12f41490702b";
 
 /** Minimum time to show the “AI analyzing” screen (ms) — ~20s */
 const MIN_LOADING_MS = 20000;
@@ -18,10 +19,12 @@ const LOADING_STEP_INTERVAL_MS = 2000;
 // ——— State ———
 
 const appState = {
-  /** @type {string[]} */
-  selectedLineIds: [],
-  /** @type {Map<string, string>} line_id -> reason */
-  reasonByLineId: new Map(),
+  /** @type {MeUser | null} */
+  me: null,
+  /** @type {{ line_id: string, name: string }[]} */
+  selectedUsers: [],
+  /** @type {Map<string, { line_id: string, name: string }>} */
+  matchByLineId: new Map(),
 };
 
 // ——— DOM ———
@@ -59,6 +62,12 @@ function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s;
   return d.innerHTML;
+}
+
+/** Placeholder display「—」→ empty for query strings */
+function queryParamName(name) {
+  const s = String(name ?? "").trim();
+  return s === "—" ? "" : s;
 }
 
 function pickStr(obj, keys, fallback = "—") {
@@ -275,11 +284,14 @@ function renderMe(me) {
  */
 function renderGrid(matches) {
   dom.grid.innerHTML = "";
-  appState.reasonByLineId.clear();
-  appState.selectedLineIds = [];
+  appState.matchByLineId.clear();
+  appState.selectedUsers = [];
 
   matches.forEach((m) => {
-    appState.reasonByLineId.set(m.line_id, m.reason);
+    appState.matchByLineId.set(m.line_id, {
+      line_id: m.line_id,
+      name: m.name,
+    });
 
     const card = document.createElement("article");
     card.className = "user-card";
@@ -302,13 +314,15 @@ function renderGrid(matches) {
 
     function toggle() {
       const id = m.line_id;
-      const idx = appState.selectedLineIds.indexOf(id);
+      const row = appState.matchByLineId.get(id);
+      if (!row) return;
+      const idx = appState.selectedUsers.findIndex((u) => u.line_id === id);
       if (idx === -1) {
-        appState.selectedLineIds.push(id);
+        appState.selectedUsers.push({ line_id: row.line_id, name: row.name });
         card.classList.add("is-selected");
         card.setAttribute("aria-pressed", "true");
       } else {
-        appState.selectedLineIds.splice(idx, 1);
+        appState.selectedUsers.splice(idx, 1);
         card.classList.remove("is-selected");
         card.setAttribute("aria-pressed", "false");
       }
@@ -334,7 +348,7 @@ function renderGrid(matches) {
 }
 
 function updateCta() {
-  const n = appState.selectedLineIds.length;
+  const n = appState.selectedUsers.length;
   dom.selectionHint.textContent = `${n} 名を選択中`;
   dom.cta.disabled = n === 0;
   dom.ctaStatus.classList.add("hidden");
@@ -342,36 +356,38 @@ function updateCta() {
   dom.ctaStatus.classList.remove("is-success", "is-error");
 }
 
-function isSendWebhookConfigured() {
-  const u = String(SEND_WEBHOOK_URL || "").trim();
-  return Boolean(u && u !== "SET_LATER");
+function buildSubmitUrl() {
+  const me = appState.me;
+  if (!me) return null;
+
+  const params = new URLSearchParams();
+  params.append("me_name", queryParamName(me.name));
+  params.append("me_line_id", me.line_id || "");
+
+  appState.selectedUsers.slice(0, 10).forEach((user, index) => {
+    const n = index + 1;
+    params.append(`user_${n}_name`, queryParamName(user.name));
+    params.append(`user_${n}_line_id`, user.line_id || "");
+  });
+
+  return `${SUBMIT_WEBHOOK_URL}?${params.toString()}`;
 }
 
 async function submitSelection() {
-  if (!isSendWebhookConfigured()) {
-    dom.ctaStatus.textContent = "送信先URLは後から設定します（SEND_WEBHOOK_URL）。";
-    dom.ctaStatus.classList.remove("hidden", "is-success");
-    dom.ctaStatus.classList.add("is-error");
-    return;
-  }
+  if (appState.selectedUsers.length === 0 || !appState.me) return;
 
-  const selected_users = appState.selectedLineIds.map((line_id) => ({
-    line_id,
-    reason: appState.reasonByLineId.get(line_id) || "",
-  }));
+  const url = buildSubmitUrl();
+  if (!url) return;
 
   const prev = dom.cta.textContent;
   dom.cta.disabled = true;
+  dom.cta.classList.add("is-loading");
   dom.cta.textContent = "送信中…";
 
   try {
-    const res = await fetch(String(SEND_WEBHOOK_URL).trim(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ selected_users }),
-    });
+    const res = await fetch(url, { method: "GET" });
     if (!res.ok) throw new Error(`送信に失敗しました（${res.status}）`);
-    dom.ctaStatus.textContent = "リクエストを送信しました。";
+    dom.ctaStatus.textContent = "リクエストを送信しました";
     dom.ctaStatus.classList.remove("hidden", "is-error");
     dom.ctaStatus.classList.add("is-success");
   } catch (e) {
@@ -380,6 +396,7 @@ async function submitSelection() {
     dom.ctaStatus.classList.remove("hidden", "is-success");
     dom.ctaStatus.classList.add("is-error");
   } finally {
+    dom.cta.classList.remove("is-loading");
     dom.cta.textContent = prev || "選択したユーザーに交流会参加リクエストを送る";
     updateCta();
   }
@@ -450,7 +467,12 @@ async function bootstrap() {
 
   stopFx();
 
-  renderMe(data.me);
+  /** @type {MeUser} */
+  const me = { ...data.me };
+  if (!me.line_id) me.line_id = lineId;
+  appState.me = me;
+
+  renderMe(me);
   renderGrid(data.matches);
 
   dom.loading.classList.add("is-done");

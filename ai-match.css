@@ -677,6 +677,11 @@ body {
   box-shadow: none;
 }
 
+.btn-primary.is-loading {
+  opacity: 0.88;
+  pointer-events: none;
+}
+
 .btn-secondary {
   background: var(--surface);
   color: var(--text);
