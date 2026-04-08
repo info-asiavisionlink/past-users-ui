@@ -25,11 +25,16 @@ const appState = {
   selectedUsers: [],
   /** @type {Map<string, { line_id: string, name: string }>} */
   matchByLineId: new Map(),
+  submitInFlight: false,
+  submissionSucceeded: false,
 };
 
 // ——— DOM ———
 
 const dom = {
+  app: document.getElementById("app"),
+  success: document.getElementById("success"),
+  successCloseBtn: document.getElementById("success-close-btn"),
   loading: document.getElementById("screen-loading"),
   loadingStep: document.getElementById("loading-step"),
   loadingCountdown: document.getElementById("loading-countdown"),
@@ -350,10 +355,53 @@ function renderGrid(matches) {
 function updateCta() {
   const n = appState.selectedUsers.length;
   dom.selectionHint.textContent = `${n} 名を選択中`;
+  if (appState.submissionSucceeded) {
+    dom.cta.disabled = true;
+    return;
+  }
   dom.cta.disabled = n === 0;
   dom.ctaStatus.classList.add("hidden");
   dom.ctaStatus.textContent = "";
   dom.ctaStatus.classList.remove("is-success", "is-error");
+}
+
+function resetSuccessView() {
+  appState.submissionSucceeded = false;
+  if (dom.app) {
+    dom.app.style.display = "";
+    dom.app.classList.remove("app--exiting");
+  }
+  if (dom.success) {
+    dom.success.classList.add("hidden");
+    dom.success.classList.remove("success-screen--visible");
+    dom.success.setAttribute("aria-hidden", "true");
+  }
+}
+
+/**
+ * Fade out selection UI, then show full success screen (after webhook OK).
+ */
+function showSuccessView() {
+  appState.submissionSucceeded = true;
+  const appEl = dom.app;
+  const successEl = dom.success;
+  if (!appEl || !successEl) return;
+
+  appEl.classList.add("app--exiting");
+  window.setTimeout(() => {
+    appEl.style.display = "none";
+    appEl.classList.remove("app--exiting");
+    successEl.classList.remove("hidden");
+    successEl.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => {
+      successEl.classList.add("success-screen--visible");
+      const title = successEl.querySelector(".success-screen__title");
+      if (title instanceof HTMLElement) {
+        title.setAttribute("tabindex", "-1");
+        title.focus({ preventScroll: true });
+      }
+    });
+  }, 400);
 }
 
 function buildSubmitUrl() {
@@ -374,11 +422,13 @@ function buildSubmitUrl() {
 }
 
 async function submitSelection() {
+  if (appState.submitInFlight || appState.submissionSucceeded) return;
   if (appState.selectedUsers.length === 0 || !appState.me) return;
 
   const url = buildSubmitUrl();
   if (!url) return;
 
+  appState.submitInFlight = true;
   const prev = dom.cta.textContent;
   dom.cta.disabled = true;
   dom.cta.classList.add("is-loading");
@@ -387,22 +437,25 @@ async function submitSelection() {
   try {
     const res = await fetch(url, { method: "GET" });
     if (!res.ok) throw new Error(`送信に失敗しました（${res.status}）`);
-    dom.ctaStatus.textContent = "リクエストを送信しました";
-    dom.ctaStatus.classList.remove("hidden", "is-error");
-    dom.ctaStatus.classList.add("is-success");
+    dom.cta.classList.remove("is-loading");
+    dom.cta.textContent = prev || "選択したユーザーに交流会参加リクエストを送る";
+    showSuccessView();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "送信に失敗しました";
     dom.ctaStatus.textContent = msg;
     dom.ctaStatus.classList.remove("hidden", "is-success");
     dom.ctaStatus.classList.add("is-error");
-  } finally {
     dom.cta.classList.remove("is-loading");
     dom.cta.textContent = prev || "選択したユーザーに交流会参加リクエストを送る";
     updateCta();
+  } finally {
+    appState.submitInFlight = false;
   }
 }
 
 async function bootstrap() {
+  resetSuccessView();
+
   dom.error.classList.add("hidden");
   dom.main.classList.add("hidden");
   dom.main.classList.remove("is-visible");
@@ -487,6 +540,13 @@ async function bootstrap() {
 function init() {
   dom.retry?.addEventListener("click", () => bootstrap());
   dom.cta?.addEventListener("click", () => submitSelection());
+  dom.successCloseBtn?.addEventListener("click", () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.close();
+    }
+  });
   bootstrap();
 }
 

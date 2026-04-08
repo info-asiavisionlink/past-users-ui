@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="ai-match.css" />
   </head>
   <body>
-    <div class="page">
+    <div class="page" id="app">
       <!-- Loading overlay -->
       <div id="screen-loading" class="screen screen-loading" aria-busy="true" aria-live="polite">
         <div class="loading-inner">
@@ -123,6 +123,32 @@
           <p id="cta-status" class="cta-status hidden" role="status" aria-live="polite"></p>
         </footer>
       </main>
+    </div>
+
+    <div
+      id="success"
+      class="success-screen hidden"
+      aria-hidden="true"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="success-screen__inner">
+        <div class="success-screen__icon" aria-hidden="true">
+          <svg class="success-check" viewBox="0 0 52 52" width="72" height="72">
+            <circle class="success-check__circle" cx="26" cy="26" r="24" fill="none" />
+            <path class="success-check__mark" fill="none" d="M14 27l8 8 16-18" />
+          </svg>
+        </div>
+        <h2 class="success-screen__title">リクエスト送信完了</h2>
+        <p class="success-screen__message">
+          選択したユーザーに交流会参加リクエストを送信しました。<br />
+          LINEからの返信をお待ちください。
+        </p>
+        <p class="success-screen__sub">日程調整のご連絡が届き次第、次のステップへ進めます。</p>
+        <button type="button" class="btn btn-secondary success-screen__btn" id="success-close-btn">
+          閉じる
+        </button>
+      </div>
     </div>
 
     <script src="ai-match.js"></script>
