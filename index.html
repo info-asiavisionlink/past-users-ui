@@ -3,54 +3,104 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f172a" />
-    <title>過去参加者マッチング | Past Participants</title>
-    <link rel="stylesheet" href="matching.css" />
+    <meta name="theme-color" content="#fafbfc" />
+    <title>AIマッチング | 交流会リクエスト</title>
+    <link rel="stylesheet" href="ai-match.css" />
   </head>
   <body>
-    <div class="app" id="app">
-      <header class="app-header">
-        <h1 class="app-title">交流したい方を選ぶ</h1>
-        <p class="app-subtitle">最大10名まで選択できます</p>
-      </header>
-
-      <main class="app-main">
-        <section id="state-loading" class="state state-loading" aria-live="polite" aria-busy="true">
-          <div class="spinner" role="status"></div>
-          <p>読み込み中…</p>
-        </section>
-
-        <section id="state-error" class="state state-error hidden" aria-live="assertive">
-          <p class="state-error-title">読み込みに失敗しました</p>
-          <p id="error-message" class="state-error-detail"></p>
-          <button type="button" class="btn btn-secondary" id="retry-btn">再試行</button>
-        </section>
-
-        <div id="state-content" class="hidden">
-          <section class="section section-profile" aria-labelledby="profile-heading">
-            <h2 id="profile-heading" class="section-label">あなたのプロフィール</h2>
-            <article class="card card-profile" id="current-user-card">
-              <p class="profile-name" id="current-user-name">—</p>
-              <p class="profile-company" id="current-user-company">—</p>
-            </article>
-          </section>
-
-          <section class="section section-list" aria-labelledby="participants-heading">
-            <h2 id="participants-heading" class="section-label">過去の参加者</h2>
-            <ul class="participant-list" id="participant-list"></ul>
-          </section>
-
-          <footer class="app-footer">
-            <p id="selection-count" class="selection-count" aria-live="polite">0 / 10 名を選択中</p>
-            <button type="button" class="btn btn-primary" id="submit-btn" disabled>
-              選択した人に交流申請する
-            </button>
-            <p id="submit-success" class="submit-success hidden" role="status" aria-live="polite"></p>
-          </footer>
+    <div class="page">
+      <!-- Loading overlay -->
+      <div id="screen-loading" class="screen screen-loading" aria-busy="true" aria-live="polite">
+        <div class="loading-inner">
+          <div class="loading-badge">
+            <span class="loading-badge__dot" aria-hidden="true"></span>
+            AI マッチング
+          </div>
+          <p class="loading-title">
+            AIがあなたに最も合うユーザーを検索中です。今しばらくお待ちください（約10秒）
+          </p>
+          <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-aria">
+            <div class="progress-track">
+              <div class="progress-flow" id="progress-flow"></div>
+            </div>
+          </div>
+          <div class="loading-meta">
+            <span class="loading-step" id="loading-step">分析ステップ: 1 / 10</span>
+            <span class="loading-stream" id="loading-stream" aria-hidden="true"></span>
+          </div>
         </div>
+      </div>
+
+      <!-- Error -->
+      <div id="screen-error" class="screen screen-error hidden" aria-live="assertive">
+        <div class="error-card">
+          <h1 class="error-title">読み込みに失敗しました</h1>
+          <p id="error-message" class="error-detail"></p>
+          <button type="button" class="btn btn-secondary" id="retry-btn">再試行</button>
+        </div>
+      </div>
+
+      <!-- Main -->
+      <main id="screen-main" class="screen-main hidden" aria-hidden="true">
+        <header class="main-header">
+          <p class="eyebrow">AIが本気で選んだ10人</p>
+          <h1 class="main-title">相性の良い過去参加者</h1>
+        </header>
+
+        <section class="profile-section" aria-labelledby="profile-heading">
+          <h2 id="profile-heading" class="sr-only">あなたのプロフィール</h2>
+          <article class="card card-profile" id="me-card">
+            <div class="card-profile__head">
+              <span class="card-profile__label">あなた</span>
+              <h3 class="card-profile__name" id="me-name">—</h3>
+            </div>
+            <dl class="profile-dl">
+              <div class="profile-dl__row">
+                <dt>協力して欲しいこと</dt>
+                <dd id="me-target">—</dd>
+              </div>
+              <div class="profile-dl__row">
+                <dt>関わりたくない人</dt>
+                <dd id="me-ng">—</dd>
+              </div>
+              <div class="profile-dl__row profile-dl__row--block">
+                <dt>AIサマリー</dt>
+                <dd id="me-summary">—</dd>
+              </div>
+              <div class="profile-dl__row profile-dl__row--tags">
+                <dt>タグ</dt>
+                <dd id="me-tags" class="tag-list"></dd>
+              </div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="explain-section" aria-labelledby="explain-heading">
+          <h2 id="explain-heading" class="sr-only">マッチングについて</h2>
+          <div class="explain-card">
+            <p class="explain-text">
+              AIがあなたの情報をもとに分析し、最も相性の良い過去参加者10名をマッチングしました。<br />
+              この中から気になる方を選択し、一緒に交流会へ参加する日程調整リクエストを送ることができます。
+            </p>
+          </div>
+        </section>
+
+        <section class="grid-section" aria-labelledby="grid-heading">
+          <h2 id="grid-heading" class="section-title">マッチしたユーザー</h2>
+          <p class="section-hint">カードをタップして選択（複数可）</p>
+          <div class="user-grid" id="user-grid" role="list"></div>
+        </section>
+
+        <footer class="cta-footer">
+          <p id="selection-hint" class="selection-hint" aria-live="polite">0 名を選択中</p>
+          <button type="button" class="btn btn-primary" id="cta-btn" disabled>
+            選択したユーザーに交流会参加リクエストを送る
+          </button>
+          <p id="cta-status" class="cta-status hidden" role="status" aria-live="polite"></p>
+        </footer>
       </main>
     </div>
 
-    <script src="matching.js" type="module"></script>
+    <script src="ai-match.js"></script>
   </body>
 </html>
