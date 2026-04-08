@@ -17,8 +17,9 @@
             AI マッチング
           </div>
           <p class="loading-title">
-            AIがあなたに最も合うユーザーを検索中です。今しばらくお待ちください（約10秒）
+            AIがあなたに最も合うユーザーを分析中です。今しばらくお待ちください（約20秒）
           </p>
+          <p class="loading-countdown" id="loading-countdown" aria-live="polite">残り約 20 秒</p>
           <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-aria">
             <div class="progress-track">
               <div class="progress-flow" id="progress-flow"></div>
@@ -27,6 +28,26 @@
           <div class="loading-meta">
             <span class="loading-step" id="loading-step">分析ステップ: 1 / 10</span>
             <span class="loading-stream" id="loading-stream" aria-hidden="true"></span>
+          </div>
+          <div class="loading-skeleton" aria-hidden="true">
+            <p class="loading-skeleton__label">マッチ候補を生成中…</p>
+            <div class="loading-skeleton__profile">
+              <div class="skeleton-block skeleton-block--lg"></div>
+              <div class="skeleton-block"></div>
+              <div class="skeleton-block"></div>
+            </div>
+            <div class="loading-skeleton__grid">
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+            </div>
           </div>
         </div>
       </div>

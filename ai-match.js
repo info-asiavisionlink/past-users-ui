@@ -9,11 +9,11 @@ const MATCHES_WEBHOOK_URL =
 /** POST: selected users webhook — replace when ready */
 const SEND_WEBHOOK_URL = "SET_LATER";
 
-/** Minimum time to show the “AI analyzing” screen (ms) — ~10s per spec */
-const MIN_LOADING_MS = 10000;
+/** Minimum time to show the “AI analyzing” screen (ms) — ~20s */
+const MIN_LOADING_MS = 20000;
 
-/** Step counter ticks (1→10) during loading */
-const LOADING_STEP_INTERVAL_MS = 1000;
+/** Fake analysis steps 1→10 (spread across MIN_LOADING_MS) */
+const LOADING_STEP_INTERVAL_MS = 2000;
 
 // ——— State ———
 
@@ -29,6 +29,7 @@ const appState = {
 const dom = {
   loading: document.getElementById("screen-loading"),
   loadingStep: document.getElementById("loading-step"),
+  loadingCountdown: document.getElementById("loading-countdown"),
   loadingStream: document.getElementById("loading-stream"),
   progressAria: document.getElementById("progress-aria"),
   progressFlow: document.getElementById("progress-flow"),
@@ -84,11 +85,6 @@ function normalizeTags(raw) {
  * @typedef {{ line_id: string, name: string, ai_summary: string, reason: string }} MatchUser
  */
 
-/**
- * Parse webhook body: { matches: [...], me: { name, target_people, ng_people, ai_summary, tags } }
- * @param {unknown} raw
- * @returns {{ me: MeUser, matches: MatchUser[] }}
- */
 function parseMeRecord(m) {
   return {
     line_id: pickStr(m, ["line_id", "lineId"], ""),
@@ -114,6 +110,9 @@ function parseMatchRecord(u) {
 }
 
 /**
+ * Webhook returns [{ me, matches }]. Always use payload = data[0], then payload.me / payload.matches.
+ * Dev override may be a plain { me, matches } object.
+ *
  * @param {unknown} raw
  * @returns {{ me: MeUser, matches: MatchUser[] }}
  */
@@ -128,34 +127,46 @@ function parsePayload(raw) {
     tags: [],
   };
 
-  if (Array.isArray(raw)) {
-    const arr = /** @type {unknown[]} */ (raw);
-    if (arr.length === 0) return { me: emptyMe, matches: [] };
-    const first = arr[0];
-    if (!first || typeof first !== "object") return { me: emptyMe, matches: [] };
-    const me = parseMeRecord(/** @type {Record<string, unknown>} */ (first));
-    const matches = arr
-      .slice(1)
+  function matchesFromList(list) {
+    if (!Array.isArray(list)) return [];
+    return list
       .filter((x) => x && typeof x === "object")
       .map((x) => parseMatchRecord(/** @type {Record<string, unknown>} */ (x)))
-      .filter((m) => m.line_id);
-    return { me, matches: matches.slice(0, 10) };
+      .filter((m) => m.line_id)
+      .slice(0, 10);
+  }
+
+  /**
+   * @param {unknown} payload
+   */
+  function fromPayloadObject(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return { me: emptyMe, matches: [] };
+    }
+    const o = /** @type {Record<string, unknown>} */ (payload);
+    let me = emptyMe;
+    if (o.me && typeof o.me === "object") {
+      me = parseMeRecord(/** @type {Record<string, unknown>} */ (o.me));
+    }
+    const matches = matchesFromList(o.matches);
+    return { me, matches };
+  }
+
+  if (Array.isArray(raw)) {
+    const arr = /** @type {unknown[]} */ (raw);
+    if (arr.length === 0) {
+      throw new Error("応答が空の配列です。[{ me, matches }] 形式を確認してください。");
+    }
+    // API returns [ { me, matches } ] — always use data[0], never data.me / data.matches
+    const payload = arr[0];
+    if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("data[0] がオブジェクトではありません。me / matches を含むオブジェクトが必要です。");
+    }
+    return fromPayloadObject(payload);
   }
 
   if (raw && typeof raw === "object") {
-    const o = /** @type {Record<string, unknown>} */ (raw);
-    let me = emptyMe;
-    const meBlock = o.me ?? o.self ?? o.user ?? o.current_user ?? o["(me)"];
-    if (meBlock && typeof meBlock === "object") {
-      me = parseMeRecord(/** @type {Record<string, unknown>} */ (meBlock));
-    }
-    let list = o.matches ?? o.users ?? o.matched_users ?? o.participants;
-    if (!Array.isArray(list)) list = [];
-    const matches = list
-      .filter((x) => x && typeof x === "object")
-      .map((x) => parseMatchRecord(/** @type {Record<string, unknown>} */ (x)))
-      .filter((m) => m.line_id);
-    return { me, matches: matches.slice(0, 10) };
+    return fromPayloadObject(raw);
   }
 
   return { me: emptyMe, matches: [] };
@@ -203,8 +214,21 @@ async function loadPayload(lineId) {
   }
 }
 
-function runLoadingFx(stepCallback, streamCallback) {
+/**
+ * @param {(step: number) => void} stepCallback
+ * @param {(stream: string) => void} streamCallback
+ * @param {(secondsLeft: number) => void} countdownCallback — 20 → 0
+ */
+function runLoadingFx(stepCallback, streamCallback, countdownCallback) {
+  let sec = 20;
+  countdownCallback(sec);
+  const countId = window.setInterval(() => {
+    sec = Math.max(0, sec - 1);
+    countdownCallback(sec);
+  }, 1000);
+
   let step = 1;
+  stepCallback(step);
   const stepId = window.setInterval(() => {
     step = Math.min(10, step + 1);
     stepCallback(step);
@@ -218,6 +242,7 @@ function runLoadingFx(stepCallback, streamCallback) {
   }, 120);
 
   return () => {
+    window.clearInterval(countId);
     window.clearInterval(stepId);
     window.clearInterval(streamId);
   };
@@ -380,24 +405,38 @@ async function bootstrap() {
 
   let currentStep = 1;
   dom.loadingStep.textContent = `分析ステップ: ${currentStep} / 10`;
+  if (dom.loadingCountdown) dom.loadingCountdown.textContent = "残り約 20 秒";
   if (dom.progressAria) dom.progressAria.setAttribute("aria-valuenow", "0");
 
   const stopFx = runLoadingFx(
     (step) => {
       currentStep = step;
       dom.loadingStep.textContent = `分析ステップ: ${step} / 10`;
-      if (dom.progressAria) dom.progressAria.setAttribute("aria-valuenow", String(step * 10));
     },
     (s) => {
       dom.loadingStream.textContent = s;
+    },
+    (secondsLeft) => {
+      if (dom.loadingCountdown) {
+        dom.loadingCountdown.textContent =
+          secondsLeft > 0 ? `残り約 ${secondsLeft} 秒` : "分析を仕上げています…";
+      }
+      if (dom.progressAria) {
+        const elapsed = 20 - Math.max(0, secondsLeft);
+        const pct = Math.min(100, Math.round((elapsed / 20) * 100));
+        dom.progressAria.setAttribute("aria-valuenow", String(pct));
+      }
     }
   );
 
+  const loadStartedAt = Date.now();
   let data;
   try {
-    const p = loadPayload(lineId);
-    const minWait = wait(MIN_LOADING_MS);
-    const [, json] = await Promise.all([minWait, p]);
+    const json = await loadPayload(lineId);
+    const elapsed = Date.now() - loadStartedAt;
+    if (elapsed < MIN_LOADING_MS) {
+      await wait(MIN_LOADING_MS - elapsed);
+    }
     data = parsePayload(json);
   } catch (e) {
     stopFx();

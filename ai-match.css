@@ -85,7 +85,7 @@ body {
 
 .loading-inner {
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
   text-align: center;
 }
 
@@ -126,11 +126,20 @@ body {
 }
 
 .loading-title {
-  margin: 0 0 1.5rem;
+  margin: 0 0 0.65rem;
   font-size: 0.95rem;
   font-weight: 600;
   line-height: 1.65;
   color: var(--text);
+}
+
+.loading-countdown {
+  margin: 0 0 1.25rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--accent);
 }
 
 .progress-wrap {
@@ -194,6 +203,80 @@ body {
   opacity: 0.85;
   min-height: 1.2em;
   letter-spacing: 0.02em;
+}
+
+/* Skeleton inside loading overlay */
+.loading-skeleton {
+  margin-top: 1.75rem;
+  text-align: left;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.loading-skeleton__label {
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.loading-skeleton__profile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.loading-skeleton__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.skeleton-block,
+.skeleton-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--border);
+}
+
+.skeleton-block {
+  height: 12px;
+}
+
+.skeleton-block--lg {
+  height: 20px;
+  width: 55%;
+}
+
+.skeleton-card {
+  height: 72px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.skeleton-block::after,
+.skeleton-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.65),
+    transparent
+  );
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* ——— Error ——— */
@@ -623,6 +706,11 @@ body {
   .loading-badge__dot {
     animation: none !important;
     transition: none !important;
+  }
+
+  .skeleton-block::after,
+  .skeleton-card::after {
+    animation: none !important;
   }
 
   .user-card {
