@@ -198,6 +198,8 @@ body {
 
 /* ——— Error ——— */
 .screen-error {
+  position: relative;
+  z-index: 110;
   min-height: 70dvh;
   display: flex;
   align-items: center;
@@ -289,9 +291,9 @@ body {
   margin-bottom: 0.35rem;
 }
 
-.card-profile__name {
+.card-profile__name-value {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.2rem;
   font-weight: 800;
   letter-spacing: -0.02em;
 }

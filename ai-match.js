@@ -1,13 +1,13 @@
 /**
  * AI matching UI — vanilla JS
- * Configure endpoints below.
  */
 
-/** GET: returns JSON (see parsePayload). Leave empty to use window.__AI_MATCH_PAYLOAD__ */
-const FETCH_MATCHES_URL = "";
+/** GET: AI matching data (?line_id= appended at runtime) */
+const MATCHES_WEBHOOK_URL =
+  "https://nextasia.app.n8n.cloud/webhook/c328b61c-9d8a-4488-97de-3632536dbd41";
 
-/** POST: selected users webhook */
-const SEND_WEBHOOK_URL = "";
+/** POST: selected users webhook — replace when ready */
+const SEND_WEBHOOK_URL = "SET_LATER";
 
 /** Minimum time to show the “AI analyzing” screen (ms) — ~10s per spec */
 const MIN_LOADING_MS = 10000;
@@ -49,6 +49,11 @@ const dom = {
 
 const STREAM_CHARS = "·∙○◦░▒▓█▀▄╱╲";
 
+function getLineIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("line_id") || "").trim();
+}
+
 function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s;
@@ -80,6 +85,35 @@ function normalizeTags(raw) {
  */
 
 /**
+ * Parse webhook body: { matches: [...], me: { name, target_people, ng_people, ai_summary, tags } }
+ * @param {unknown} raw
+ * @returns {{ me: MeUser, matches: MatchUser[] }}
+ */
+function parseMeRecord(m) {
+  return {
+    line_id: pickStr(m, ["line_id", "lineId"], ""),
+    name: pickStr(m, ["name"], "—"),
+    target: pickStr(
+      m,
+      ["target_people", "target", "協力して欲しいこと", "協力してほしいこと", "cooperation", "cooperation_wanted"],
+      "—"
+    ),
+    ng: pickStr(m, ["ng_people", "ng", "関わりたくない人", "avoid"], "—"),
+    ai_summary: pickStr(m, ["ai_summary", "aiSummary"], "—"),
+    tags: normalizeTags(m.tags ?? m.tag),
+  };
+}
+
+function parseMatchRecord(u) {
+  return {
+    line_id: pickStr(u, ["line_id", "lineId"], ""),
+    name: pickStr(u, ["name"], "—"),
+    ai_summary: pickStr(u, ["ai_summary", "aiSummary"], "—"),
+    reason: pickStr(u, ["reason", "matching_reason"], "—"),
+  };
+}
+
+/**
  * @param {unknown} raw
  * @returns {{ me: MeUser, matches: MatchUser[] }}
  */
@@ -99,67 +133,27 @@ function parsePayload(raw) {
     if (arr.length === 0) return { me: emptyMe, matches: [] };
     const first = arr[0];
     if (!first || typeof first !== "object") return { me: emptyMe, matches: [] };
-    const meObj = /** @type {Record<string, unknown>} */ (first);
-    const me = {
-      line_id: pickStr(meObj, ["line_id", "lineId"], ""),
-      name: pickStr(meObj, ["name"], "—"),
-      target: pickStr(
-        meObj,
-        ["target", "協力して欲しいこと", "cooperation", "cooperation_wanted"],
-        "—"
-      ),
-      ng: pickStr(meObj, ["ng", "関わりたくない人", "ng_people", "avoid"], "—"),
-      ai_summary: pickStr(meObj, ["ai_summary", "aiSummary"], "—"),
-      tags: normalizeTags(meObj.tags ?? meObj.tag),
-    };
-    const rest = arr.slice(1);
-    const matches = rest
+    const me = parseMeRecord(/** @type {Record<string, unknown>} */ (first));
+    const matches = arr
+      .slice(1)
       .filter((x) => x && typeof x === "object")
-      .map((x) => {
-        const o = /** @type {Record<string, unknown>} */ (x);
-        return {
-          line_id: pickStr(o, ["line_id", "lineId"], ""),
-          name: pickStr(o, ["name"], "—"),
-          ai_summary: pickStr(o, ["ai_summary", "aiSummary"], "—"),
-          reason: pickStr(o, ["reason", "matching_reason"], "—"),
-        };
-      })
+      .map((x) => parseMatchRecord(/** @type {Record<string, unknown>} */ (x)))
       .filter((m) => m.line_id);
     return { me, matches: matches.slice(0, 10) };
   }
 
   if (raw && typeof raw === "object") {
     const o = /** @type {Record<string, unknown>} */ (raw);
-    const meBlock = o.me ?? o.self ?? o.user ?? o.current_user ?? o["(me)"];
     let me = emptyMe;
+    const meBlock = o.me ?? o.self ?? o.user ?? o.current_user ?? o["(me)"];
     if (meBlock && typeof meBlock === "object") {
-      const m = /** @type {Record<string, unknown>} */ (meBlock);
-      me = {
-        line_id: pickStr(m, ["line_id", "lineId"], ""),
-        name: pickStr(m, ["name"], "—"),
-        target: pickStr(
-          m,
-          ["target", "協力して欲しいこと", "cooperation", "cooperation_wanted"],
-          "—"
-        ),
-        ng: pickStr(m, ["ng", "関わりたくない人", "ng_people", "avoid"], "—"),
-        ai_summary: pickStr(m, ["ai_summary", "aiSummary"], "—"),
-        tags: normalizeTags(m.tags ?? m.tag),
-      };
+      me = parseMeRecord(/** @type {Record<string, unknown>} */ (meBlock));
     }
     let list = o.matches ?? o.users ?? o.matched_users ?? o.participants;
     if (!Array.isArray(list)) list = [];
     const matches = list
       .filter((x) => x && typeof x === "object")
-      .map((x) => {
-        const u = /** @type {Record<string, unknown>} */ (x);
-        return {
-          line_id: pickStr(u, ["line_id", "lineId"], ""),
-          name: pickStr(u, ["name"], "—"),
-          ai_summary: pickStr(u, ["ai_summary", "aiSummary"], "—"),
-          reason: pickStr(u, ["reason", "matching_reason"], "—"),
-        };
-      })
+      .map((x) => parseMatchRecord(/** @type {Record<string, unknown>} */ (x)))
       .filter((m) => m.line_id);
     return { me, matches: matches.slice(0, 10) };
   }
@@ -167,21 +161,46 @@ function parsePayload(raw) {
   return { me: emptyMe, matches: [] };
 }
 
-async function loadPayload() {
+/**
+ * @param {string} lineId
+ */
+async function loadPayload(lineId) {
   if (typeof window.__AI_MATCH_PAYLOAD__ !== "undefined" && window.__AI_MATCH_PAYLOAD__ !== null) {
     return window.__AI_MATCH_PAYLOAD__;
   }
-  if (!FETCH_MATCHES_URL || !String(FETCH_MATCHES_URL).trim()) {
+
+  const url = new URL(MATCHES_WEBHOOK_URL);
+  url.searchParams.set("line_id", lineId);
+
+  let res;
+  try {
+    res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    throw new Error("ネットワークエラーです。接続を確認して再試行してください。");
+  }
+
+  if (!res.ok) {
+    throw new Error(`データの取得に失敗しました（${res.status}）`);
+  }
+
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const text = await res.text();
     throw new Error(
-      "データURLが未設定です。ai-match.js の FETCH_MATCHES_URL を設定するか、window.__AI_MATCH_PAYLOAD__ にJSONを渡してください。"
+      text.trim()
+        ? `想定外の応答形式です: ${text.trim().slice(0, 120)}${text.length > 120 ? "…" : ""}`
+        : "JSONではない応答が返りました"
     );
   }
-  const res = await fetch(FETCH_MATCHES_URL, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`取得に失敗しました（${res.status}）`);
-  return res.json();
+
+  try {
+    return await res.json();
+  } catch {
+    throw new Error("JSONの解析に失敗しました");
+  }
 }
 
 function runLoadingFx(stepCallback, streamCallback) {
@@ -209,7 +228,7 @@ function wait(ms) {
 }
 
 function renderMe(me) {
-  dom.meName.textContent = me.name;
+  dom.meName.textContent = me.name || "—";
   dom.meTarget.textContent = me.target;
   dom.meNg.textContent = me.ng;
   dom.meSummary.textContent = me.ai_summary;
@@ -298,9 +317,14 @@ function updateCta() {
   dom.ctaStatus.classList.remove("is-success", "is-error");
 }
 
+function isSendWebhookConfigured() {
+  const u = String(SEND_WEBHOOK_URL || "").trim();
+  return Boolean(u && u !== "SET_LATER");
+}
+
 async function submitSelection() {
-  if (!SEND_WEBHOOK_URL || !String(SEND_WEBHOOK_URL).trim()) {
-    dom.ctaStatus.textContent = "送信先（SEND_WEBHOOK_URL）が未設定です。";
+  if (!isSendWebhookConfigured()) {
+    dom.ctaStatus.textContent = "送信先URLは後から設定します（SEND_WEBHOOK_URL）。";
     dom.ctaStatus.classList.remove("hidden", "is-success");
     dom.ctaStatus.classList.add("is-error");
     return;
@@ -316,7 +340,7 @@ async function submitSelection() {
   dom.cta.textContent = "送信中…";
 
   try {
-    const res = await fetch(SEND_WEBHOOK_URL, {
+    const res = await fetch(String(SEND_WEBHOOK_URL).trim(), {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ selected_users }),
@@ -340,7 +364,18 @@ async function bootstrap() {
   dom.error.classList.add("hidden");
   dom.main.classList.add("hidden");
   dom.main.classList.remove("is-visible");
-  dom.loading.classList.remove("is-done");
+
+  const lineId = getLineIdFromUrl();
+  if (!lineId) {
+    dom.loading.classList.add("hidden", "is-done");
+    dom.loading.setAttribute("aria-busy", "false");
+    dom.errorMessage.textContent =
+      "URL に line_id がありません。例: ページURLに ?line_id=あなたのID を付けて開いてください。";
+    dom.error.classList.remove("hidden");
+    return;
+  }
+
+  dom.loading.classList.remove("hidden", "is-done");
   dom.loading.setAttribute("aria-busy", "true");
 
   let currentStep = 1;
@@ -360,7 +395,7 @@ async function bootstrap() {
 
   let data;
   try {
-    const p = loadPayload();
+    const p = loadPayload(lineId);
     const minWait = wait(MIN_LOADING_MS);
     const [, json] = await Promise.all([minWait, p]);
     data = parsePayload(json);
